@@ -1,0 +1,55 @@
+[project]
+name = "poetry-pep621-compat"
+version = "0.0.2"
+description = "Experimental plugin that patches Poetry to make it work with PEP621 compliant projects."
+authors = [
+    {name = "Gabriel Dugny", email = "git@dugny.me"},
+]
+dependencies = [
+    "typing-extensions>=4.7.1",
+    # "gidgethub[httpx]>4.0.0",
+    # "django>2.0; os_name == \"nt\"",
+    "pytest @ git+https://github.com/pytest-dev/pytest@7.4.2",
+    "ipdb>=0.13.13,<1.0.0",
+]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+keywords = ["poetry", "pep621", "compatibility", "experimental", "poetry-plugin"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+
+]
+
+[project.urls]
+Homepage = "https://example.com"
+Documentation = "https://readthedocs.org"
+Repository = "https://github.com/me/spam.git"
+Changelog = "https://github.com/me/spam/blob/master/CHANGELOG.md"
+
+[project.entry-points."poetry.application.plugin"]
+poetry-pep621-compat = "poetry_pep621_compat.poetry_plugin:PoetryPEP621CompatPlugin"
+
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "poetry>=1.6.1",
+    "black>=23.9.0",
+    "ruff>=0.0.287",
+    "mypy>=1.5.1",
+    # "ipdb",
+]
