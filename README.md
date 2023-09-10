@@ -4,7 +4,7 @@ Experimental Poetry plugin to add support for PEP 621.
 
 This project is a POC, and is not intended for production use.
 
-## Supported fields
+## Supported read fields
 
 | PEP 621 field | Poetry field | Lossless? |Notes |
 | --- | --- | --- | --- |
@@ -25,6 +25,10 @@ This project is a POC, and is not intended for production use.
 | scripts | scripts | ✅ | We ignore type of scripts |
 | . | include / exclude | ❌ | This is a build-backend specification |
 | . | packages | ❌ | This is a build-backend specification |
+
+## Supported write fields
+
+Only `dependencies` and `version` is currently supported.
 
 ## Dependencies
 
@@ -47,3 +51,8 @@ Has there are no dev dependencies in PEP 621, we will use:
 ## Dynamic fields
 
 Not supported yet.
+
+
+## TODO
+
+- Test that everything still works with a regular Poetry project
