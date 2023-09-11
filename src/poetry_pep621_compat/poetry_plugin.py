@@ -219,7 +219,7 @@ class FakeTOMLFile(TOMLFile):
                     elif v[0] == "modified":
                         # Get the item index
                         for i, item in enumerate(original["project"]["dependencies"]):
-                            if item.startswith(dep_name):
+                            if _get_pep508_package_name(item) == dep_name:
                                 # XXX Do not use startswith, use Requirement
                                 original["project"]["dependencies"][
                                     i
@@ -227,7 +227,7 @@ class FakeTOMLFile(TOMLFile):
                                 break
                     elif v[0] == "deleted":
                         for i, item in enumerate(original["project"]["dependencies"]):
-                            if item.startswith(dep_name):
+                            if _get_pep508_package_name(item) == dep_name:
                                 del original["project"]["dependencies"][i]
                                 break
                 if k[2] == "version":
@@ -240,7 +240,12 @@ class FakeTOMLFile(TOMLFile):
         return super().write(original)
 
 
-def file_patched(self: poetry_toml_core.PyProjectTOML) -> TOMLFile:
+def _get_pep508_package_name(dep: str) -> str:
+    req = Requirement(dep)
+    return req.name
+
+
+def file_patched(self: poetry_toml.PyProjectTOML) -> TOMLFile:
     real_file = self._toml_file
     from tomlkit.toml_file import TOMLFile as BaseTOMLFile
 
@@ -254,7 +259,7 @@ def file_patched(self: poetry_toml_core.PyProjectTOML) -> TOMLFile:
         return FakeTOMLFile(self._path, FakeTomlDocument(data_))
 
 
-class FakeTomlDocument(TOMLDocument):
+class FakeTomlDocument(tomlkit.TOMLDocument):
     def __init__(self, data: dict) -> None:
         super().__init__()
         # We have a nested dict, with arrays dict and string
@@ -272,7 +277,7 @@ class FakeTomlDocument(TOMLDocument):
                 self[k] = v
 
 
-def patched_data(self: poetry_toml_core.PyProjectTOML) -> TOMLDocument:
+def patched_data(self: poetry_toml.PyProjectTOML) -> TOMLDocument:
     if self._toml_document is None:
         if not self.file.exists():
             self._toml_document = TOMLDocument()
@@ -290,6 +295,7 @@ def patched_data(self: poetry_toml_core.PyProjectTOML) -> TOMLDocument:
     return self._toml_document
 
 
+# FIXME Should be poetry_toml_core.PyProjectTOML
 class PatchedPyProjectTOML(poetry_toml.PyProjectTOML):
     poetry_config = property(poetry_config_patched)
     file = property(file_patched)
@@ -302,18 +308,6 @@ def patched_poetry__init__(
     self._pyproject = PatchedPyProjectTOML(file)
     self._package = package
     self._local_config = local_config
-
-
-def patched_tomlfile_read(self: TOMLFile) -> TOMLDocument:
-    x = BaseTOMLFile.read(self)
-
-    if str(self._path).endswith("pyproject.toml") and x.get("project"):
-        poetry_config = convert_pep621_to_poetry_config(x)
-        x = {
-            **x,
-            **poetry_config,
-        }
-    return TOMLDocument(x)
 
 
 class PoetryPEP621CompatPlugin(ApplicationPlugin):
