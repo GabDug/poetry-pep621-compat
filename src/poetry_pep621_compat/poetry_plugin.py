@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, Literal
 
 import poetry.core.pyproject.toml as poetry_toml_core
 import poetry.pyproject.toml as poetry_toml
@@ -13,24 +13,16 @@ from poetry.plugins.application_plugin import ApplicationPlugin
 from poetry.toml import TOMLFile
 from tomlkit.toml_document import TOMLDocument
 from tomlkit.toml_file import TOMLFile as BaseTOMLFile
-
+import tomlkit.items
 from poetry_pep621_compat.convert_utils import (
     _convert_authors_maintainers,
     _convert_specifier,
 )
 from poetry_pep621_compat.utils import compare_dicts
 
-if TYPE_CHECKING:
-    pass
-
 
 def poetry_config_patched(self: poetry_toml_core.PyProjectTOML) -> dict[str, Any]:
-    if len(self.data) == 0:
-        from tomlkit.toml_file import TOMLFile as BaseTOMLFile
-
-        data = BaseTOMLFile.read(self)
-    else:
-        data = self.data
+    data = self.data
     try:
         tool = data["tool"]
         assert isinstance(tool, dict)
@@ -64,31 +56,33 @@ def poetry_config_patched(self: poetry_toml_core.PyProjectTOML) -> dict[str, Any
 def convert_pep621_to_poetry_config(data: MutableMapping[str, Any]) -> dict[str, Any]:
     project = data.get("project", {})
     poetry_toml = {
-        "name": project.get("name", ""),
+        "name": project["name"],  # Only mandatory value
         "version": project.get("version", "0.0.0"),
         "description": project.get("description", ""),
         "authors": project.get("authors", []),
     }
     # Authors are string only with Poetry
-
-    poetry_toml["authors"] = _convert_authors_maintainers(project.get("authors"))
+    poetry_toml["authors"] = _convert_authors_maintainers(project.get("authors", []))
     poetry_toml["maintainers"] = _convert_authors_maintainers(
         project.get("maintainers", [])
     )
-    if project.get("license"):
-        pep_license = project.get("license")
-        if isinstance(pep_license, str):
-            poetry_toml["license"] = pep_license
-        elif isinstance(pep_license, dict):
-            poetry_toml["license"] = pep_license.get("text", pep_license.get("file"))
+    # License can only be string with Poetry
+    if project_license := project.get("license"):
+        if isinstance(project_license, str):
+            poetry_toml["license"] = project_license
+        elif isinstance(project_license, dict):
+            poetry_toml["license"] = project_license.get(
+                "text", project_license.get("file")
+            )
 
+    # We simply copy the classifiers and readme
     if project.get("keywords"):
         poetry_toml["keywords"] = project.get("keywords")
 
-    if project.get("classifiers"):
-        poetry_toml["classifiers"] = project.get("classifiers")
-    if project.get("readme"):
-        project_readme = project.get("readme")
+    if project_classifiers := project.get("classifiers"):
+        poetry_toml["classifiers"] = project_classifiers
+
+    if project_readme := project.get("readme"):
         poetry_toml["readme"] = (
             project_readme
             if isinstance(project_readme, str)
@@ -96,7 +90,8 @@ def convert_pep621_to_poetry_config(data: MutableMapping[str, Any]) -> dict[str,
         )
 
     if project.get("urls"):
-        project_urls = project.get("urls")
+        project_urls = project.get("urls", {})
+        assert isinstance(project_urls, dict)
         # Make project_urls lowercase
         original_case = {k.lower(): k for k, v in project_urls.items()}
         project_urls = {k.lower(): v for k, v in project_urls.items()}
@@ -155,9 +150,11 @@ def extract_deps(deps_list: list[str], target_deps: dict[str, Any]):
 
 
 def pep508_requirement_to_poetry(dep: str) -> tuple[str, dict[str, Any] | str]:
+    """Transform a PEP508 requirement to a tuple with the dependency normalized name and the associated Poetry dependency info."""
     assert isinstance(dep, str)
     # 1. Parse dep string PEP508
     req = Requirement(dep)
+
     target_dep: dict[str, Any] | str = {}
 
     if not req.marker and not req.extras and str(req.specifier) != "":
@@ -181,7 +178,7 @@ def pep508_requirement_to_poetry(dep: str) -> tuple[str, dict[str, Any] | str]:
         if req.extras:
             target_dep["extras"] = list(req.extras)
     if isinstance(target_dep, dict):
-        if "version" in target_dep and len(target_dep) == 1:
+        if "version" in target_dep:
             if target_dep["version"] == "":
                 target_dep = "*"
     return req.name, target_dep
@@ -200,36 +197,28 @@ class FakeTOMLFile(TOMLFile):
     def read_original(self):
         return BaseTOMLFile(self.path).read()
 
-    def write(self, data: TOMLDocument) -> None:
-        diff = compare_dicts(self.read(), data)
+    def write(self, data: FakeTomlDocument) -> None:
+        """We always get the whole data, so we need to compare, detect diffs,
+        and apply diffs to the PEP-621 metadata.
+        """
+        print(data)
+        # assert
+        original_fake_poetry_pyproject: FakeTomlDocument = self.read()  # type: ignore
+        print(type(original_fake_poetry_pyproject))
+        print(type(data))
+        diff = compare_dicts(original_fake_poetry_pyproject, data)
+        breakpoint()
         original = self.read_original()
-
+        assert isinstance(original["project"], tomlkit.items.Table)
         for k, v in diff.items():
             if k[0] == "tool" and k[1] == "poetry":
                 if k[2] == "dependencies":
-                    dep_name = k[3]
-                    if dep_name == "python":
-                        # XXX Support this?
-                        continue
-
-                    if v[0] == "added":
-                        original["project"]["dependencies"].append(
-                            f"{dep_name}{str(_convert_specifier(v[1]))}"
-                        )
-                    elif v[0] == "modified":
-                        # Get the item index
-                        for i, item in enumerate(original["project"]["dependencies"]):
-                            if _get_pep508_package_name(item) == dep_name:
-                                # XXX Do not use startswith, use Requirement
-                                original["project"]["dependencies"][
-                                    i
-                                ] = f"{dep_name}{str(_convert_specifier(v[1][1]))}"
-                                break
-                    elif v[0] == "deleted":
-                        for i, item in enumerate(original["project"]["dependencies"]):
-                            if _get_pep508_package_name(item) == dep_name:
-                                del original["project"]["dependencies"][i]
-                                break
+                    self.write_deps(k, v, original["project"]["dependencies"])
+                if k[2] == "group":
+                    # FIXME support either dev group or pdm dev dependencies
+                    # FIXME support adding to a new group
+                    deps = original["tool"]["pdm"]["dev-dependencies"][k[3]]
+                    self.write_deps(k, v, deps)
                 if k[2] == "version":
                     # IF not dynamic
                     if "version" not in original["project"].get("dynamic", []):
@@ -237,7 +226,40 @@ class FakeTOMLFile(TOMLFile):
         # XXX Compare and save the difference
         # XXX Warn user that we are saving with experimental mode
         # XXX Warn if some operations could not be done
+        print(original)
         return super().write(original)
+
+    @staticmethod
+    def write_deps(
+        original_path: tuple[str, ...],
+        change_operation: tuple[
+            Literal["added", "modified", "deleted"], str | dict[Any, Any]
+        ],
+        fake_toml_deps,
+    ):
+        dep_name = original_path[-1]
+        if dep_name == "python":
+            return
+
+        if change_operation[0] == "added":
+            assert isinstance(fake_toml_deps, tomlkit.items.Array)
+            fake_toml_deps.append(
+                f"{dep_name}{str(_convert_specifier(change_operation[1]))}"
+            )
+        elif change_operation[0] == "modified":
+            # Get the item index
+            for i, item in enumerate(fake_toml_deps):
+                if _get_pep508_package_name(item) == dep_name:
+                    # XXX Do not use startswith, use Requirement
+                    fake_toml_deps[
+                        i
+                    ] = f"{dep_name}{str(_convert_specifier(change_operation[1][1]))}"
+                    break
+        elif change_operation[0] == "deleted":
+            for i, item in enumerate(fake_toml_deps):
+                if _get_pep508_package_name(item) == dep_name:
+                    del fake_toml_deps[i]
+                    break
 
 
 def _get_pep508_package_name(dep: str) -> str:

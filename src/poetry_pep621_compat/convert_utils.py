@@ -10,16 +10,19 @@ from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 
 
-def _convert_authors_maintainers(authors: Sequence[str]) -> list[dict[str, str]]:
-    new_authors = []
+def _convert_authors_maintainers(authors: Sequence[dict[str, str]]) -> list[str]:
+    """Convert standard authors objects to Poetry author strings"""
+    poetry_authors: list[str] = []
     for i, author in enumerate(authors):
         if isinstance(author, dict):
-            new_authors.append(
-                author["name"] + (" <" + author["email"] + ">")
-                if "email" in author
-                else ""
-            )
-    return new_authors
+            # We may only have email or only name from project.authors
+            if len(author) == 1:
+                poetry_authors.append(next(iter(author.values())))
+            else:
+                poetry_authors.append(f'{author["name"]}  < {author["email"]}>')
+        else:
+            poetry_authors.append(str(author))
+    return poetry_authors
 
 
 def _convert_req(name: str, req_dict: Any | list[Any]) -> Iterable[str]:

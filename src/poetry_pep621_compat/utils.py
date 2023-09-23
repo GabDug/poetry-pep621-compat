@@ -1,7 +1,18 @@
 from __future__ import annotations
+from typing import Any, Literal
 
 
-def compare_dicts(dict1, dict2):
+from tomlkit.toml_document import TOMLDocument
+
+
+def compare_dicts(
+    dict1: TOMLDocument, dict2: TOMLDocument
+) -> dict[
+    tuple[str, ...],
+    tuple[
+        Literal["added", "modified", "deleted"], str | dict[Any, Any] | tuple[Any, Any]
+    ],
+]:
     """
     Compare two dictionaries and return the differences between them.
 
@@ -13,9 +24,15 @@ def compare_dicts(dict1, dict2):
       the type of change ('added', 'deleted', 'modified') and the values
       from dict1 and dict2.
     """
-    diff = {}
+    diff: dict[
+        tuple[str, ...],
+        tuple[
+            Literal["added", "modified", "deleted"],
+            str | dict[Any, Any] | tuple[Any, Any],
+        ],
+    ] = {}
 
-    def compare_recursive(path, d1, d2):
+    def compare_recursive(path, d1: dict, d2: dict):
         for key in set(d1.keys()) | set(d2.keys()):
             new_path = path + [key]
 
